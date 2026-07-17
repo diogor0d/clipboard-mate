@@ -1,0 +1,16 @@
+.git
+.github
+.env
+.env.*
+!.env.example
+**/node_modules
+**/dist
+**/coverage
+data
+*.log
+.DS_Store
+Thumbs.db
+
+# The server image contains only the API and its shared protocol package.
+apps/desktop
+docs

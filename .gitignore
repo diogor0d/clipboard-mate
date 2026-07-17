@@ -1,0 +1,16 @@
+node_modules/
+.pnpm-store/
+dist/
+out/
+coverage/
+*.log
+.env*
+!.env.example
+electron-builder.env
+*.tsbuildinfo
+data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+.DS_Store
+Thumbs.db

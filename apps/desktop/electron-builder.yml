@@ -1,0 +1,42 @@
+appId: dev.clipboard-mate.desktop
+productName: Clipboard Mate
+
+directories:
+  output: dist
+
+files:
+  - out/**/*
+  - package.json
+  - "!**/*.map"
+
+asar: true
+artifactName: "${productName}-${version}-${os}-${arch}.${ext}"
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: false
+  createStartMenuShortcut: true
+  shortcutName: Clipboard Mate
+
+mac:
+  category: public.app-category.utilities
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+    - target: zip
+      arch:
+        - x64
+        - arm64
+
+dmg:
+  title: "${productName} ${version}"

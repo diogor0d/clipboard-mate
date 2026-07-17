@@ -1,0 +1,15 @@
+packages:
+  - apps/*
+  - packages/*
+
+allowBuilds:
+  better-sqlite3: true
+  electron: true
+  electron-winstaller: true
+  esbuild: true
+
+# Make workspace dependencies self-contained when `pnpm deploy` prepares the
+# production API filesystem in the Docker build.
+injectWorkspacePackages: true
+syncInjectedDepsAfterScripts:
+  - build
