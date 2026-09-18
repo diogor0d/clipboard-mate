@@ -1,77 +1,159 @@
-# Clipboard Mate
+<div align="center">
+  <img src="apps/desktop/build/icon.svg" width="112" height="112" alt="Clipboard Mate icon">
+  <h1>Clipboard Mate</h1>
+  <p><strong>A deliberate, self-hosted clipboard relay for iPhone, Windows, and macOS.</strong></p>
+  <p>Share text between your devices without background clipboard monitoring or automatic clipboard replacement.</p>
+</div>
 
-Clipboard Mate is a deliberately manual shared clipboard for iPhone, Windows,
-and macOS. The server keeps one current text value plus revision history. Native
-desktop clients keep that shared state ready in a tray popover, but they never
-monitor, upload, or overwrite the operating-system clipboard in the background.
+## Overview
 
-## What it does
+Clipboard Mate keeps one shared text value, plus revision history, on a server
+you control. Native desktop clients and iOS Shortcuts let you publish or retrieve
+that value only when you explicitly request it.
 
-- **Copy shared** writes the already-cached shared value to the local clipboard.
-- **Publish local clipboard** reads and uploads the local clipboard only when
-  clicked.
-- **Publish text** uploads the popover's text without touching the local
-  clipboard.
-- **Edit current** replaces the shared value with revision-conflict protection.
-- The API state stays fresh through server-sent events with periodic refresh as
-  a fallback.
+Unlike automatic clipboard synchronizers, Clipboard Mate maintains a strict
+boundary between its shared state and each device's local clipboard:
+
+- remote updates never overwrite the operating-system clipboard;
+- local clipboard contents are never monitored or uploaded in the background;
+- reading or writing the local clipboard always requires a named user action;
 - Maccy and Windows Clipboard History remain the local history managers.
 
-The important boundary is that background synchronization means **API state to
-the app's encrypted cache**, not OS clipboard synchronization. The only code
-paths allowed to read or write the clipboard are explicit user actions.
+> [!IMPORTANT]
+> Clipboard contents and retained history are visible to the API server. This
+> version does not provide end-to-end encryption.
+
+## Features
+
+- Explicit publish and pull operations with no background clipboard capture
+- Windows and macOS tray client built with Electron
+- iPhone and iPad integration through native Apple Shortcuts
+- Authenticated, independently revocable credentials for each device
+- Revision history with pinning and configurable retention
+- Compare-and-swap editing to prevent silent stale overwrites
+- Idempotent mutations for safe request retries
+- Server-sent events with periodic refresh fallback
+- Encrypted desktop credential and state storage through Electron `safeStorage`
+- Self-hosted API backed by SQLite and packaged for Docker Compose
+- Optional Cloudflare Access service-token support
+
+## How It Works
+
+```mermaid
+flowchart LR
+    IOS["iPhone / iPad<br>Shortcuts"] -->|"Publish or pull"| API["Clipboard Mate API"]
+    WIN["Windows<br>tray client"] <-->|"Shared state"| API
+    MAC["macOS<br>tray client"] <-->|"Shared state"| API
+    API --> DB[("SQLite<br>state and history")]
+
+    WIN -. "Explicit action" .-> WCB["Windows clipboard"]
+    MAC -. "Explicit action" .-> MCB["macOS clipboard"]
+```
+
+The API is the source of truth for shared state. Desktop applications may
+refresh and cache that state in the background, but cached API state is not the
+same as the local clipboard. The clipboard is accessed only when the user
+selects an explicit publish or copy action.
 
 ## Components
 
-| Component | Runs on | Responsibility |
+| Component | Technology | Responsibility |
 | --- | --- | --- |
-| API | Docker on your server | Authenticated current state, SQLite history, revision events |
-| Desktop app | Native Electron app on Windows/macOS | Tray popover, encrypted local cache, explicit clipboard actions |
-| iOS Shortcuts | iPhone/iPad | Explicit publish and pull actions |
+| API | Node.js, Fastify, SQLite | Authentication, current state, revision history, and events |
+| Desktop | Electron, React | Windows/macOS tray interface, encrypted cache, and explicit clipboard actions |
+| iOS integration | Apple Shortcuts | User-triggered publish and pull workflows |
+| Contracts | TypeScript, Zod | Shared request, response, and configuration schemas |
 
-See [Architecture](docs/architecture.md), [server deployment](docs/deployment.md),
-[desktop builds](docs/desktop.md), and [iOS Shortcut setup](docs/ios-shortcuts.md)
-for the full design.
+## Quick Start
 
-## Run the API with Docker Compose
+### Requirements
 
-The production API is intended to run in Docker. It binds to loopback by
-default; publish it through an authenticated HTTPS reverse proxy such as
-Cloudflare Tunnel instead of exposing port 43120 directly.
+- Docker Engine with Docker Compose v2
+- An authenticated HTTPS route for remote access
+- A backup policy for the `clipboard-mate-data` volume
+
+### Start the API
 
 ```powershell
 Copy-Item .env.example .env
 docker compose up -d --build
-docker compose exec api node dist/cli/create-device.js --name "Diogo iPhone"
+docker compose exec api node dist/cli/create-device.js --name "My device"
 ```
 
-The last command prints a device ID and a token once. Create a separate token
-for each desktop client and Shortcut, then store each token in that client.
-Detailed deployment, Cloudflare Access, backup, and revocation instructions are
-in [docs/deployment.md](docs/deployment.md).
+The final command prints a device ID and bearer token once. Store the token on
+that device and retain the device ID for future revocation. Create a separate
+credential for every desktop installation and Shortcut.
 
-## Local development
+The API binds to `127.0.0.1:43120` on the Docker host by default. Publish it
+through an authenticated HTTPS reverse proxy or Cloudflare Tunnel; do not expose
+the container port directly to the internet.
 
-Prerequisites: Node.js 22+ and pnpm 11.
+See [Docker deployment](docs/deployment.md) for Cloudflare Access, updates,
+backups, and credential revocation.
+
+## Desktop Client
+
+The desktop application runs as a tray popover and provides these operations:
+
+| Action | Reads local clipboard | Writes local clipboard | Updates shared state |
+| --- | :---: | :---: | :---: |
+| Copy shared | No | Yes | No |
+| Publish local clipboard | Yes | No | Yes |
+| Publish typed text | No | No | Yes |
+| Edit current | No | No | Yes |
+| Clear shared state | No | No | Yes |
+
+Build an unpacked application for the current platform:
+
+```powershell
+pnpm --filter @clipboard-mate/desktop package:dir
+```
+
+Platform-specific packaging commands and signing limitations are documented in
+[Desktop builds](docs/desktop.md).
+
+> [!WARNING]
+> Current local desktop builds are unsigned. Windows SmartScreen and macOS
+> Gatekeeper may warn users. Public binary distribution requires Windows code
+> signing and Apple signing/notarization.
+
+## iPhone and iPad
+
+The iOS integration uses separate Shortcuts for publishing and pulling text, so
+each invocation has one clear direction. Shortcut credentials must be treated
+as secrets because anyone who can inspect or export a configured Shortcut can
+recover them.
+
+See [iOS Shortcuts](docs/ios-shortcuts.md) for setup instructions and the exact
+API requests.
+
+## Local Development
+
+### Requirements
+
+- Node.js 22 or later
+- pnpm 11
+
+Install dependencies and start the API:
 
 ```powershell
 Copy-Item .env.example .env
 pnpm install
-pnpm device:create -- --name "Windows development"
+pnpm device:create -- --name "Development device"
 pnpm dev:api
 ```
 
-In another terminal:
+In another terminal, start the desktop client:
 
 ```powershell
 pnpm dev:desktop
 ```
 
-Enter `http://127.0.0.1:43120` and the development device token in the desktop
-client. Plain HTTP is accepted only for loopback development; use HTTPS for a
-remote API.
+Connect the client to `http://127.0.0.1:43120` using the generated development
+token. Plain HTTP is accepted only for exact loopback development addresses;
+remote API connections require HTTPS.
 
-Useful checks:
+### Quality Checks
 
 ```powershell
 pnpm typecheck
@@ -79,23 +161,57 @@ pnpm test
 pnpm build
 ```
 
-Create an unpacked desktop build with
-`pnpm --filter @clipboard-mate/desktop package:dir`. Windows and macOS artifact
-commands, plus signing boundaries, are documented in
-[docs/desktop.md](docs/desktop.md).
+## Configuration
 
-## Security boundaries
+| Variable | Default | Description |
+| --- | --- | --- |
+| `CLIPBOARD_MATE_HOST` | `127.0.0.1` | API listener address outside Compose |
+| `CLIPBOARD_MATE_PORT` | `43120` | API listener port |
+| `CLIPBOARD_MATE_DB_PATH` | `./data/clipboard-mate.sqlite` | SQLite database path |
+| `CLIPBOARD_MATE_HISTORY_LIMIT` | `250` | Number of unpinned revisions retained |
+| `CLIPBOARD_MATE_MAX_TEXT_BYTES` | `262144` | Maximum UTF-8 text size |
+| `CLIPBOARD_MATE_ALLOWED_ORIGIN` | empty | Optional browser CORS origin |
+| `CLIPBOARD_MATE_BIND_ADDRESS` | `127.0.0.1` | Docker host interface receiving the published port |
+| `CLIPBOARD_MATE_BIND_PORT` | `43120` | Docker host port |
+| `CLIPBOARD_MATE_IMAGE` | `clipboard-mate-api:local` | Compose image name and tag |
 
-- Device tokens are random, independently revocable credentials. Only token
-  hashes are stored by the API.
-- Electron keeps credentials and the cached shared value in OS-backed encrypted
-  storage; credentials are never exposed to the renderer.
-- API responses are `no-store`, request bodies are not logged, and text size is
-  capped (256 KiB by default).
-- The API and its SQLite history can read the shared plaintext. End-to-end
-  encryption is not currently implemented.
-- A Shortcut containing credentials is a secret-bearing artifact. Do not share
-  or export it with real tokens embedded.
+Refer to [`.env.example`](.env.example) for the canonical configuration template.
 
-Clipboard Mate is currently text-only and designed for one trusted user's
-devices.
+## Security and Privacy
+
+- Device credentials use random secrets and can be revoked independently.
+- The API stores token hashes rather than bearer-token plaintext.
+- Desktop credentials and cached state are encrypted with OS-backed storage.
+- Remote desktop connections require HTTPS; HTTP is restricted to loopback.
+- API responses containing shared state use `Cache-Control: no-store`.
+- Request bodies and authentication headers are excluded or redacted from logs.
+- Text size is bounded to 256 KiB by default.
+- Docker binds to loopback by default and runs with a read-only filesystem,
+  dropped capabilities, and `no-new-privileges`.
+
+The API database and backups contain plaintext clipboard history. Protect the
+host, volume, reverse proxy, credentials, and backup copies accordingly. A
+Cloudflare Access service token can add an independent authentication layer at
+the edge, but it does not replace the Clipboard Mate device token.
+
+For the complete trust model, see [Architecture and privacy](docs/architecture.md).
+
+## Documentation
+
+- [Architecture and privacy model](docs/architecture.md)
+- [Docker server deployment](docs/deployment.md)
+- [Desktop builds](docs/desktop.md)
+- [iOS Shortcut setup](docs/ios-shortcuts.md)
+
+## Project Status
+
+Clipboard Mate is currently a text-only project intended for one trusted user's
+devices. The API, desktop client, and Shortcut contract are functional, but the
+project should be treated as pre-release software. Public desktop distribution,
+automatic updates, and end-to-end encryption are not currently implemented.
+
+## License
+
+No open-source license has been selected yet. Until a `LICENSE` file is added,
+the source remains all rights reserved and may not be redistributed or modified
+without permission.
